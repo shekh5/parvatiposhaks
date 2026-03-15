@@ -6,6 +6,7 @@ import apiFunctionality from "../utils/api.functionality.js"
 
 
 const createProduct = asyncHandler(async (req,res)=>{
+    req.body.user = req.user._id;
     const {name,description,price,category,Stock,Image} = req.body;
     const product = await Product.create({
         name,
@@ -13,7 +14,8 @@ const createProduct = asyncHandler(async (req,res)=>{
         price,
         category, 
         Stock,
-        Image
+        Image,
+        user:req.user._id
     })
     if(!product){
         return next(new ErrorHandler("Failed to create product",500))

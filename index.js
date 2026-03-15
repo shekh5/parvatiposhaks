@@ -4,7 +4,7 @@ import dbConnect from "./db/dbConnect.js";
 
 dotenv.config();
 
-const PORT = 3000 || process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 
 //handle uncaught exceptions
