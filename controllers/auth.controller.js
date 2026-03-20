@@ -172,4 +172,43 @@ const updateProfile = asyncHandler(async(req,res,next)=>{
     })
     res.status(200).json(new apiResponse(200,"Profile updated successfully",user,true))
 })
-export {registerUser,loginUser,logout,requestPasswordReset,resetPassword,getUserDetail,updatePassword,updateProfile}
+
+const getUserList = asyncHandler(async(req,res,next)=>{
+    const users = await User.find();
+    res.status(200).json(new apiResponse(200,"User list retrieved successfully",users))
+})
+
+const getSingleUser = asyncHandler(async(req,res,next)=>{
+    const user = await User.findById(req.params.id)
+    if(!user){
+        return next(new ErrorHandler("User not found with id " + req.params.id,404))
+    }
+     res.status(200).json(new apiResponse(200,"User details retrieved successfully",user))
+})
+
+//admin- changing user role
+const updateUserRole = asyncHandler(async(req,res,next)=>{
+    const {role} = req.body;
+    const newUserData = {
+        role
+    }
+    const user = await User.findByIdAndUpdate(req.user.id,newUserData,{
+        new:true,
+        runValidators:true
+    })
+    if(!user){
+        return next(new ErrorHandler("User not found",400))
+    }
+    res.status(200).json(new apiResponse(200,"User role updated successfully",user))
+})
+
+//admin delete user profile
+const deleteUser = asyncHandler(async(req,res,next)=>{
+    const user = await User.findById(req.params.id);
+    if(!user){
+        return next(new ErrorHandler("User not found",404))
+    }
+    await User.findByIdAndDelete(req.params.id);
+    res.status(200).json(new apiResponse(200,"User deleted successfully",null,true))
+})
+export {registerUser,loginUser,logout,requestPasswordReset,resetPassword,getUserDetail,updatePassword,updateProfile,getUserList,getSingleUser,updateUserRole,deleteUser }
