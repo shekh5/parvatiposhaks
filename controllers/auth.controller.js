@@ -5,12 +5,35 @@ import apiResponse from "../utils/api.Response.js"
 import { sendToken } from "../utils/jwtToken.js";
 import { sendEmail } from "../utils/sendEmail.js";
 import crypto from "crypto"
-import { send } from "process";
+import { v2 as cloudinary } from 'cloudinary';
 // import bcrypt from "bcryptjs"
 
 const registerUser = asyncHandler(async (req,res,next)=>{
-    const {name,email,password,username} = req.body;
+    const {name,email,password,username,avatar} = req.body;
 
+    if(!avatar){
+        return next(new ErrorHandler("Avatar is required",400))
+    }
+
+    const existingUser = await User.findOne({
+        $or: [{email}, {username}]
+    })
+
+    if(existingUser){
+        const message = existingUser.email === email ? "Email already exists" : "Username already exists"
+        return next(new ErrorHandler(message,400))
+    }
+
+    let myCloud;
+    try {
+        myCloud = await cloudinary.uploader.upload(avatar,{
+            folder:"avatars",
+            width:150,
+            crop:"scale"
+        })
+    } catch (error) {
+        return next(new ErrorHandler("Avatar upload failed. Please choose a valid image.",400))
+    }
     // const hashedPassword = await bcrypt.hash(password,10);
 
     // if(await User.findOne({email})){
@@ -24,8 +47,8 @@ const registerUser = asyncHandler(async (req,res,next)=>{
         password,
         username,
         avatar:{
-            public_id:"sample_id",
-            url:"sample_url"
+            public_id:myCloud.public_id,
+            url:myCloud.secure_url || myCloud.url
         }
     })
 
@@ -34,8 +57,10 @@ const registerUser = asyncHandler(async (req,res,next)=>{
     }
 
     const token = user.getJWTToken();
-    console.log("Generated JWT Token:", token); // Debugging log to check token generation
-    return res.status(201).json( new apiResponse(201,"user registered successfully",user,true,token))
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    return res.status(201).json( new apiResponse(201,"user registered successfully",userResponse,true,token))
 })
 
 const loginUser = asyncHandler(async (req,res,next)=>{
@@ -81,7 +106,7 @@ const requestPasswordReset = asyncHandler(async (req,res,next)=>{
         return next(new ErrorHandler("could not save reset token, please try again later",500))
     }
 
-    const resetPasswordUrl = `http://localhost:4000/api/v1/password/reset/${resetToken}`
+    const resetPasswordUrl = `${req.protocol}://${req.get('host')}/reset/${resetToken}`
 
     const message = `use the following link to reset your password:\n\n ${resetPasswordUrl}\n\n this link is valid for 5 minutes. \n\n if you did not request this email, please ignore it.`;
     
@@ -161,12 +186,39 @@ const updatePassword = asyncHandler(async(req,res,next)=>{
 })
 
 const updateProfile = asyncHandler(async(req,res,next)=>{
-    const {name,email} = req.body;
+    const {name,email,avatar} = req.body;
     const updateUserdetails = {
         name,
         email
     }
-    const user =await User.findByIdAndUpdate(req.user.id,updateUserdetails,{
+
+    if(avatar!==""){
+        const user = await User.findById(req.user.id);
+        if(user && user.avatar && user.avatar.public_id){
+            try {
+                await cloudinary.uploader.destroy(user.avatar.public_id);
+            } catch (err) {
+                console.log("Failed to delete old avatar:", err);
+            }
+        }
+
+        let myCloud;
+        try {
+            myCloud = await cloudinary.uploader.upload(avatar,{
+                folder:"avatars",
+                width:150,
+                crop:"scale"
+            });
+            updateUserdetails.avatar = {
+                public_id: myCloud.public_id,
+                url: myCloud.secure_url || myCloud.url
+            };
+        } catch (error) {
+            return next(new ErrorHandler("Avatar upload failed. Please choose a valid image.",400));
+        }
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.id,updateUserdetails,{
         new:true,
         runValidators:true
     })

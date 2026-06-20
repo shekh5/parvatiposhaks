@@ -16,7 +16,7 @@ router.post("/SignIn",loginValidator(),validateRequest,loginUser)
 router.route("/logout").post(logout)
 router.route("/password/forgot").post(requestPasswordReset)//forgot password
 router.route("/password/reset/:token").post(resetPassword)//reset password
-router.route("/profile").post(verifyUserAuth,getUserDetail) //get user details
-router.post("/password/update",verifyUserAuth,updatePassword) //update password
+router.route("/profile").get(verifyUserAuth,getUserDetail) //get user details
+router.put("/password/update",verifyUserAuth,updatePassword) //update password
 router.post("/profile/update",verifyUserAuth,updateProfile) //update profile
 export default router;

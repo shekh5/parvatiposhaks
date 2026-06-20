@@ -1,5 +1,7 @@
 export const sendToken = (user,statusCode,res)=>{
     const token = user.getJWTToken();
+    const userResponse = user.toObject();
+    delete userResponse.password;
 
     //options for cookie
     const options = {
@@ -9,7 +11,7 @@ export const sendToken = (user,statusCode,res)=>{
 
     return res.status(statusCode).cookie("token",token,options).json({
         success:true,
-        user,
+        user:userResponse,
         token
     })
 }
