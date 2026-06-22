@@ -8,8 +8,23 @@ export const verifyUserAuth = asyncHandler(async (req,res,next)=>{
     if(!token){
         return next(new apiError("Authentication is missing!Please login to access resource",401))
     }
-    const decodedData = jwt.verify(token,process.env.JWT_SECRET);
-    req.user = await User.findById(decodedData.id);
+    
+    let decodedData;
+    try {
+        decodedData = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (jwtErr) {
+        return next(jwtErr);
+    }
+
+    try {
+        req.user = await User.findById(decodedData.id);
+    } catch (dbErr) {
+        return next(new apiError("Authentication service is temporarily unavailable", 503));
+    }
+
+    if (!req.user) {
+        return next(new apiError("Authentication is missing!Please login to access resource", 401));
+    }
     next()
 })
 

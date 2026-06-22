@@ -1,4 +1,5 @@
 import express from 'express';
+import dotenv from 'dotenv';
 import productRoute from './routes/productRoute.route.js';
 import errorHandlerMiddleware from '../backend/middleware/error.middleware.js';
 import authRoute from './routes/auth.route.js';
