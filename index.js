@@ -1,27 +1,25 @@
-import app from "./app.js";
+import app from './app.js';
 import dotenv from 'dotenv';
-import dbConnect from "./db/dbConnect.js";
-import {v2 as cloudinary} from 'cloudinary';
-import Razorpay from 'razorpay'
+import dbConnect from './db/dbConnect.js';
+import { v2 as cloudinary } from 'cloudinary';
+import Razorpay from 'razorpay';
 
 dotenv.config();
 
 cloudinary.config({
-    cloud_name:process.env.CLOUDINARY_CLOUD_NAME,
-    api_key:process.env.CLOUDINARY_API_KEY,
-    api_secret:process.env.CLOUDINARY_API_SECRET
-})
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const PORT = process.env.PORT || 3000;
 
-
 //handle uncaught exceptions
-process.on('uncaughtException',(error)=>{
-    console.log(`Uncaught Exception: ${error.message}`);
-    console.log("Shutting down the server due to uncaught exception");
-    process.exit(1);
-})
-
+process.on('uncaughtException', (error) => {
+  console.log(`Uncaught Exception: ${error.message}`);
+  console.log('Shutting down the server due to uncaught exception');
+  process.exit(1);
+});
 
 // dbConnect().then(app.listen(PORT,()=>{
 //     console.log(`Server is running on port ${PORT}`)
@@ -32,18 +30,17 @@ process.on('uncaughtException',(error)=>{
 
 dbConnect();
 
-const server = app.listen(PORT,()=>{
-    console.log(`Server is running on port ${PORT}`)
-})
+const server = app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
 
-process.on('unhandledRejection',(error)=>{
-    console.log(`Unhandled Rejection: ${error.message}`);
-    console.log("Shutting down the server due to unhandled promise rejection");
-    server.close(()=>{
-        process.exit(1);
-    })
-})
-
+process.on('unhandledRejection', (error) => {
+  console.log(`Unhandled Rejection: ${error.message}`);
+  console.log('Shutting down the server due to unhandled promise rejection');
+  server.close(() => {
+    process.exit(1);
+  });
+});
 
 // console.log(myname)
 
