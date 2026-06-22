@@ -33,4 +33,6 @@ app.get("/healthCheck",(req,res)=>{
 
 app.use(errorHandlerMiddleware)
 
+dotenv.config({path:'backend/.env'})
+
 export default app;
