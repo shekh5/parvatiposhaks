@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import dbConnect from './db/dbConnect.js';
 import { v2 as cloudinary } from 'cloudinary';
 import Razorpay from 'razorpay';
+import logger from './utils/logger.js';
 
 dotenv.config();
 
@@ -16,8 +17,8 @@ const PORT = process.env.PORT || 3000;
 
 //handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.log(`Uncaught Exception: ${error.message}`);
-  console.log('Shutting down the server due to uncaught exception');
+  logger.error(`Uncaught Exception: ${error.message}`, { stack: error.stack });
+  logger.error('Shutting down the server due to uncaught exception');
   process.exit(1);
 });
 
@@ -31,12 +32,12 @@ process.on('uncaughtException', (error) => {
 dbConnect();
 
 const server = app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  logger.info(`Server is running on port ${PORT}`);
 });
 
 process.on('unhandledRejection', (error) => {
-  console.log(`Unhandled Rejection: ${error.message}`);
-  console.log('Shutting down the server due to unhandled promise rejection');
+  logger.error(`Unhandled Rejection: ${error.message}`, { stack: error.stack });
+  logger.error('Shutting down the server due to unhandled promise rejection');
   server.close(() => {
     process.exit(1);
   });

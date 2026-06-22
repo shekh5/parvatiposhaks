@@ -11,8 +11,18 @@ import fileUpload from 'express-fileupload';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
+import morgan from 'morgan';
+import logger from './utils/logger.js';
 
 const app = express();
+
+// HTTP Request Logging
+const morganFormat = process.env.NODE_ENV !== "production" ? "dev" : "combined";
+app.use(
+  morgan(morganFormat, {
+    stream: { write: (message) => logger.info(message.trim()) },
+  })
+);
 
 // Security Middlewares
 app.use(helmet()); // Set security HTTP headers

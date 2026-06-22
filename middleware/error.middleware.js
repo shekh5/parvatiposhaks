@@ -1,8 +1,14 @@
 import apiError from '../utils/api.Error.js';
+import logger from '../utils/logger.js';
 
 export default (err, req, res, next) => {
   err.statuscode = err.statuscode || 500;
   err.message = err.message || 'Internal Server Error';
+
+  logger.error(`${err.statuscode} - ${err.message} - ${req.originalUrl} - ${req.method} - ${req.ip}`);
+  if (err.statuscode === 500) {
+      logger.error(err); // Log full stack trace for 500 errors
+  }
 
   if (err.name === 'CastError') {
     const message = `This is invalid resource ${err.path}`;
