@@ -8,7 +8,7 @@ export const sendToken = (user, statusCode, res) => {
     expires: new Date(Date.now() + parseInt(process.env.EXPIRES_COOKIE) * 24 * 60 * 60 * 1000),
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'none',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
   };
 

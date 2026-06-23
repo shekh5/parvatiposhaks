@@ -41,7 +41,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
   message: { message: 'Too many requests from this IP, please try again in 15 minutes!' },
 });
-app.use('/api', limiter);
+if (process.env.NODE_ENV === 'production') {
+  app.use('/api', limiter);
+}
 
 //middleware
 app.use(express.json());
