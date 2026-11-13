@@ -6,19 +6,39 @@ import ErrorHandler from '../utils/api.Error.js';
 import apiResponse from '../utils/api.Response.js';
 // import apiFunctionality from "../utils/api.functionality.js";
 
-async function updateQuanity(id, quantity) {
-  const product = await Product.findById(id);
-  if (!product) {
-    return next(new ErrorHandler('Product not found', 404));
-  }
-  product.stock -= quantity;
-  await product.save({ validateBeforeSave: false });
+// Atomically take stock for one item; returns false when there is not enough
+async function reserveStock(id, quantity) {
+  const result = await Product.updateOne(
+    { _id: id, Stock: { $gte: quantity } },
+    { $inc: { Stock: -quantity } }
+  );
+  return result.modifiedCount === 1;
+}
+
+async function releaseStock(id, quantity) {
+  await Product.updateOne({ _id: id }, { $inc: { Stock: quantity } });
 }
 
 //create new order
 const createOrder = asyncHandler(async (req, res, next) => {
   const { shippingInfo, orderItems, paymentInfo, itemsPrice, taxPrice, shippingPrice, totalPrice } =
     req.body;
+
+  if (!Array.isArray(orderItems) || orderItems.length === 0) {
+    return next(new ErrorHandler('Order must contain at least one item', 400));
+  }
+
+  // Stock is taken once, when the order is placed
+  const reserved = [];
+  for (const item of orderItems) {
+    const quantity = Number(item.quantity);
+    const ok = quantity > 0 && (await reserveStock(item.product, quantity));
+    if (!ok) {
+      await Promise.all(reserved.map((r) => releaseStock(r.product, r.quantity)));
+      return next(new ErrorHandler(`Insufficient stock for ${item.name || 'an item'}`, 400));
+    }
+    reserved.push({ product: item.product, quantity });
+  }
 
   const order = await Order.create({
     shippingInfo,
@@ -78,12 +98,11 @@ const updateOrderStatus = asyncHandler(async (req, res, next) => {
   if (order.orderStatus === 'Delivered') {
     return next(new ErrorHandler('You have already delivered this order', 400));
   }
-  await Promise.all(order.orderItems.map((item) => updateQuanity(item.product, item.quantity))); //meaning of this line
   order.orderStatus = req.body.status;
-  console.log('order status', order.orderStatus);
   if (req.body.status === 'Delivered') {
     order.deliveredAt = Date.now();
   }
+  await order.save();
   return res
     .status(200)
     .json({ message: 'Order status updated successfully', order, success: true });
@@ -97,7 +116,7 @@ const deleteOrder = asyncHandler(async (req, res, next) => {
   }
   const orderStatus = order.orderStatus;
   if (orderStatus === 'Delivered') {
-    await order.deleteOne({ _id: req.params.id });
+    await order.deleteOne();
     return res.status(200).json({ message: 'Order deleted successfully' });
   } else {
     return next(new ErrorHandler("You can't delete this order until it's delivered", 400));

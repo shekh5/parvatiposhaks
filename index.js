@@ -1,11 +1,8 @@
 import app from './app.js';
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import dbConnect from './db/dbConnect.js';
 import { v2 as cloudinary } from 'cloudinary';
-import Razorpay from 'razorpay';
 import logger from './utils/logger.js';
-
-dotenv.config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -22,39 +19,25 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-// dbConnect().then(app.listen(PORT,()=>{
-//     console.log(`Server is running on port ${PORT}`)
-// })).catch((error)=>{
-//     console.log("Failed to connect to database. Server not started.",error);
-//     process.exit(1);
-// })
+let server;
 
-dbConnect();
-
-const server = app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT}`);
-});
-
-process.on('unhandledRejection', (error) => {
-  logger.error(`Unhandled Rejection: ${error.message}`, { stack: error.stack });
-  logger.error('Shutting down the server due to unhandled promise rejection');
-  server.close(() => {
+dbConnect()
+  .then(() => {
+    server = app.listen(PORT, () => {
+      logger.info(`Server is running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    logger.error(`Failed to connect to database. Server not started: ${error.message}`);
     process.exit(1);
   });
+
+process.on('unhandledRejection', (error) => {
+  logger.error(`Unhandled Rejection: ${error?.message}`, { stack: error?.stack });
+  logger.error('Shutting down the server due to unhandled promise rejection');
+  if (server) {
+    server.close(() => process.exit(1));
+  } else {
+    process.exit(1);
+  }
 });
-
-// console.log(myname)
-
-/*
-UncaughtException: Occurs when a synchronous error escapes all try/catch blocks, leading to a crash. 
-1
-UnhandledRejection: Occurs when a promise is rejected and there is no .catch() handler, leading to a crash by default in Node.js v15 and later. 
-1
-Difference: UncaughtException is a synchronous error, while UnhandledRejection is an asynchronous error. 
-1
-Handling: Both require proper error-handling code to prevent crashes and data integrity issues. 
-2
-
-
-4 Sources
-*/

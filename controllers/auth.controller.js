@@ -2,7 +2,7 @@ import User from '../models/user.models.js';
 import asyncHandler from '../utils/async-handler.js';
 import apiError from '../utils/api.Error.js';
 import apiResponse from '../utils/api.Response.js';
-import { sendToken } from '../utils/jwtToken.js';
+import { sendToken, cookieOptions } from '../utils/jwtToken.js';
 import { sendEmail } from '../utils/sendEmail.js';
 import crypto from 'crypto';
 import { v2 as cloudinary } from 'cloudinary';
@@ -85,10 +85,7 @@ const loginUser = asyncHandler(async (req, res, next) => {
 });
 
 const logout = asyncHandler(async (req, res, next) => {
-  res.cookie('token', null, {
-    expires: new Date(Date.now()),
-    httpOnly: true,
-  });
+  res.clearCookie('token', cookieOptions());
   return res.status(200).json(new apiResponse(200, 'Logged out successfully', null, true));
 });
 
@@ -96,8 +93,13 @@ const logout = asyncHandler(async (req, res, next) => {
 const requestPasswordReset = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({ email: req.body.email });
 
+  // Same response whether or not the account exists, so emails cannot be enumerated
+  const genericResponse = {
+    success: true,
+    message: 'If an account exists for this email, a password reset link has been sent',
+  };
   if (!user) {
-    return next(new apiError('User not found with this email', 404));
+    return res.status(200).json(genericResponse);
   }
   let resetToken;
   try {
@@ -108,9 +110,10 @@ const requestPasswordReset = asyncHandler(async (req, res, next) => {
     return next(new apiError('could not save reset token, please try again later', 500));
   }
 
-  const resetPasswordUrl = `${req.protocol}://${req.get('host')}/reset/${resetToken}`;
+  const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`;
+  const resetPasswordUrl = `${baseUrl}/reset/${resetToken}`;
 
-  const message = `use the following link to reset your password:\n\n ${resetPasswordUrl}\n\n this link is valid for 5 minutes. \n\n if you did not request this email, please ignore it.`;
+  const message = `use the following link to reset your password:\n\n ${resetPasswordUrl}\n\n this link is valid for 15 minutes. \n\n if you did not request this email, please ignore it.`;
 
   try {
     //send email
@@ -119,9 +122,7 @@ const requestPasswordReset = asyncHandler(async (req, res, next) => {
       subject: 'Password Reset Request',
       message: message,
     });
-    res
-      .status(200)
-      .json({ success: true, message: `Password reset link sent to your email ${user.email}` });
+    res.status(200).json(genericResponse);
   } catch (error) {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
@@ -197,13 +198,13 @@ const updateProfile = asyncHandler(async (req, res, next) => {
     email,
   };
 
-  if (avatar !== '') {
+  if (avatar) {
     const user = await User.findById(req.user.id);
     if (user && user.avatar && user.avatar.public_id) {
       try {
         await cloudinary.uploader.destroy(user.avatar.public_id);
       } catch (err) {
-        console.log('Failed to delete old avatar:', err);
+        // old avatar cleanup is best effort
       }
     }
 
@@ -246,15 +247,15 @@ const getSingleUser = asyncHandler(async (req, res, next) => {
 //admin- changing user role
 const updateUserRole = asyncHandler(async (req, res, next) => {
   const { role } = req.body;
-  const newUserData = {
-    role,
-  };
-  const user = await User.findByIdAndUpdate(req.user.id, newUserData, {
+  if (!['user', 'admin'].includes(role)) {
+    return next(new apiError('Role must be either user or admin', 400));
+  }
+  const user = await User.findByIdAndUpdate(req.params.id, { role }, {
     new: true,
     runValidators: true,
   });
   if (!user) {
-    return next(new apiError('User not found', 400));
+    return next(new apiError('User not found', 404));
   }
   res.status(200).json(new apiResponse(200, 'User role updated successfully', user));
 });

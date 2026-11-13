@@ -5,8 +5,7 @@ import apiResponse from '../utils/api.Response.js';
 import apiFunctionality from '../utils/api.functionality.js';
 
 // create product
-const createProduct = asyncHandler(async (req, res) => {
-  req.body.user = req.user._id;
+const createProduct = asyncHandler(async (req, res, next) => {
   let { name, description, price, category, Stock, Image } = req.body;
 
   // Convert file system paths to web-accessible URLs
@@ -44,7 +43,6 @@ const getAllProducts = asyncHandler(async (req, res, next) => {
 
   //getting filtered query before pagination
   const filteredQuery = apiFeatures.query.clone(); //how works
-  console.log('filtered query', filteredQuery);
   const productCount = await filteredQuery.countDocuments(); //how works
 
   //calculate totalPages based on filtered count
@@ -80,11 +78,15 @@ const updateProduct = asyncHandler(async (req, res, next) => {
   if (!id) {
     return next(new ErrorHandler('Product id is required', 400));
   }
-  let product = await Product.findByIdAndUpdate(id);
+  const allowed = ['name', 'description', 'price', 'category', 'Stock', 'Image'];
+  const updates = {};
+  allowed.forEach((key) => {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  });
+  const product = await Product.findByIdAndUpdate(id, updates, { new: true, runValidators: true });
   if (!product) {
     return next(new ErrorHandler('Product not found', 404));
   }
-  product = await Product.findByIdAndUpdate(id, req.body, { new: true, runValidators: true });
   return res.status(200).json(new apiResponse(200, 'Product updated successfully', product, true));
 });
 
@@ -112,7 +114,6 @@ const getSingleProduct = asyncHandler(async (req, res, next) => {
 
 //creating and updating product review
 const createProductReview = asyncHandler(async (req, res, next) => {
-  0.0;
   const { rating, comment } = req.body;
   const review = {
     user: req.user._id,
@@ -129,6 +130,9 @@ const createProductReview = asyncHandler(async (req, res, next) => {
   // );
 
   const product = await Product.findById(req.body.productId);
+  if (!product) {
+    return next(new ErrorHandler('Product not found', 404));
+  }
   const reviewExists = product.reviews.find(
     (review) => review.user && review.user.toString() === req.user._id.toString()
   );
@@ -169,10 +173,17 @@ const deleteReview = asyncHandler(async (req, res, next) => {
   if (!product) {
     return next(new ErrorHandler('Product not found', 404));
   }
+  const target = product.reviews.find((review) => review._id.toString() === String(req.query.id));
+  if (!target) {
+    return next(new ErrorHandler('Review not found', 404));
+  }
+  const isOwner = target.user && target.user.toString() === req.user._id.toString();
+  if (!isOwner && req.user.role !== 'admin') {
+    return next(new ErrorHandler('You can only delete your own review', 403));
+  }
   const reviews = product.reviews.filter(
-    (review) => review._id.toString() !== req.query.id.toString()
+    (review) => review._id.toString() !== String(req.query.id)
   );
-  console.log('reviews', reviews);
   const noOfreviews = reviews.length;
   let sum = 0;
   reviews.forEach((review) => (sum += review.rating));

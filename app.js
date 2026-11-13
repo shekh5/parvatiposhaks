@@ -1,7 +1,7 @@
 import express from 'express';
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import productRoute from './routes/productRoute.route.js';
-import errorHandlerMiddleware from '../backend/middleware/error.middleware.js';
+import errorHandlerMiddleware from './middleware/error.middleware.js';
 import authRoute from './routes/auth.route.js';
 import orderRoute from './routes/order.route.js';
 import cookieParser from 'cookie-parser';
@@ -21,6 +21,14 @@ const morganFormat = process.env.NODE_ENV !== "production" ? "dev" : "combined";
 app.use(
   morgan(morganFormat, {
     stream: { write: (message) => logger.info(message.trim()) },
+  })
+);
+
+app.use(
+  cors({
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((o) => o.trim()),
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
   })
 );
 
@@ -49,14 +57,7 @@ if (process.env.NODE_ENV === 'production') {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(path.resolve(), 'public'))); //path for static files like images,css,js etc. we will put all our static files in public folder and access them from there
-app.use(
-  cors({
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true,
-  })
-);
+app.use(express.static(path.join(path.resolve(), 'public')));
 app.use(fileUpload());
 
 app.use('/api/v1', productRoute);
@@ -67,7 +68,5 @@ app.get('/healthCheck', (req, res) => {
 });
 
 app.use(errorHandlerMiddleware);
-
-dotenv.config({ path: 'backend/.env' });
 
 export default app;

@@ -15,6 +15,13 @@ export default (err, req, res, next) => {
     err = new apiError(message, 404);
   }
 
+  if (err.name === 'ValidationError') {
+    const message = Object.values(err.errors || {})
+      .map((e) => e.message)
+      .join(', ');
+    err = new apiError(message || 'Validation failed', 400);
+  }
+
   if (err.code === 11000) {
     const message = `Duplicate ${Object.keys(err.keyValue)} entered. already exists`;
     err = new apiError(message, 400);
@@ -30,9 +37,10 @@ export default (err, req, res, next) => {
     err = new apiError(message, 401);
   }
 
-  res.status(err.statuscode).json({
+  const statuscode = err.statuscode || 500;
+  const hideDetails = statuscode === 500 && process.env.NODE_ENV === 'production';
+  res.status(statuscode).json({
     success: false,
-    message: err.message,
-    // message:err.stack
+    message: hideDetails ? 'Internal Server Error' : err.message,
   });
 };
