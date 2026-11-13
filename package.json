@@ -1,14 +1,16 @@
 {
-  "name": "backend",
+  "name": "parvatiposhaks-backend",
   "version": "1.0.0",
-  "description": "version-1 backend parvatiPhoshaks",
+  "description": "Parvati Poshaks e-commerce API",
   "license": "ISC",
   "author": "",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js",
-    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest",
+    "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
+import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
-const dbConnect = async () => {
-  await mongoose.connect(process.env.MONGO_DB_URL);
+const dbConnect = async (url = config.mongoUrl) => {
+  await mongoose.connect(url);
   logger.info('Connected to database successfully');
 };
 

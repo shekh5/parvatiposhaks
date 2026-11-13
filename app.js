@@ -1,72 +1,79 @@
 import express from 'express';
-import 'dotenv/config';
-import productRoute from './routes/productRoute.route.js';
-import errorHandlerMiddleware from './middleware/error.middleware.js';
-import authRoute from './routes/auth.route.js';
-import orderRoute from './routes/order.route.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
 import fileUpload from 'express-fileupload';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import morgan from 'morgan';
+import config from './config/index.js';
 import logger from './utils/logger.js';
+import ApiError from './utils/apiError.js';
+import errorHandler from './middleware/error.middleware.js';
+import { apiLimiter } from './middleware/rateLimit.middleware.js';
+import authRoute from './routes/auth.route.js';
+import productRoute from './routes/product.route.js';
+import cartRoute from './routes/cart.route.js';
+import couponRoute from './routes/coupon.route.js';
+import orderRoute from './routes/order.route.js';
 
 const app = express();
 
-// HTTP Request Logging
-const morganFormat = process.env.NODE_ENV !== "production" ? "dev" : "combined";
+if (config.isProduction) app.set('trust proxy', 1); // real client IPs behind a load balancer
+
 app.use(
-  morgan(morganFormat, {
+  morgan(config.isProduction ? 'combined' : 'dev', {
     stream: { write: (message) => logger.info(message.trim()) },
   })
 );
 
+app.use(helmet());
 app.use(
   cors({
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((o) => o.trim()),
+    origin: config.cors.origins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   })
 );
+app.use('/api', apiLimiter);
 
-// Security Middlewares
-app.use(helmet()); // Set security HTTP headers
-// Custom sanitization to avoid Express 5 req.query getter error
+// The raw body is kept so the Razorpay webhook signature can be checked
+app.use(
+  express.json({
+    limit: '5mb',
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(cookieParser());
+app.use(fileUpload({ limits: { fileSize: 5 * 1024 * 1024 }, abortOnLimit: true }));
+
+// Strip MongoDB operators from user input. Must run after the body parsers.
+// (req.query is read-only in Express 5; query values are whitelisted where used.)
 app.use((req, res, next) => {
   if (req.body) mongoSanitize.sanitize(req.body);
   if (req.params) mongoSanitize.sanitize(req.params);
   next();
 });
 
-// Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // Limit each IP to 100 requests per `window`
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { message: 'Too many requests from this IP, please try again in 15 minutes!' },
-});
-if (process.env.NODE_ENV === 'production') {
-  app.use('/api', limiter);
-}
-
-//middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 app.use(express.static(path.join(path.resolve(), 'public')));
-app.use(fileUpload());
 
-app.use('/api/v1', productRoute);
 app.use('/api/v1', authRoute);
+app.use('/api/v1', productRoute);
+app.use('/api/v1', cartRoute);
+app.use('/api/v1', couponRoute);
 app.use('/api/v1', orderRoute);
+
 app.get('/healthCheck', (req, res) => {
-  res.status(200).json({ message: 'Server is healthy' });
+  res.status(200).json({ success: true, message: 'Server is healthy' });
 });
 
-app.use(errorHandlerMiddleware);
+app.use((req, res, next) => {
+  next(new ApiError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
+});
+
+app.use(errorHandler);
 
 export default app;
