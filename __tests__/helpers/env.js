@@ -1,0 +1,12 @@
+// Fixed environment for tests. The real .env is never loaded under NODE_ENV=test.
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = 'test-jwt-secret';
+process.env.RAZORPAY_KEY_ID = 'rzp_test_key';
+process.env.RAZORPAY_KEY_SECRET = 'rzp_test_secret';
+process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
+process.env.FRONTEND_URL = 'http://shop.test';
+process.env.TAX_PERCENT = '10';
+process.env.SHIPPING_FEE = '50';
+process.env.FREE_SHIPPING_ABOVE = '1000';
+process.env.RESULTS_PER_PAGE = '2';
+process.env.SMTP_MAIL = 'shop@shop.test';
