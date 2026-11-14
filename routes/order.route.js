@@ -3,6 +3,7 @@ import { getStats } from '../controllers/admin.controller.js';
 import {
   cancelMyOrder,
   checkout,
+  checkoutSummary,
   deleteOrder,
   getAllOrders,
   getSingleOrder,
@@ -29,6 +30,7 @@ const router = Router();
 const admin = [verifyUserAuth, roleBasedAccess('admin')];
 
 router.post('/checkout', verifyUserAuth, requireVerifiedEmail, checkoutValidator(), validate, checkout);
+router.get('/checkout/summary', verifyUserAuth, checkoutSummary);
 router.post('/payment/verify', verifyUserAuth, verifyPaymentValidator(), validate, verifyPayment);
 // Razorpay calls this directly; it is authenticated by its signature, not a session
 router.post('/payment/webhook', razorpayWebhook);

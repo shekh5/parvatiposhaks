@@ -16,6 +16,7 @@ import productRoute from './routes/product.route.js';
 import cartRoute from './routes/cart.route.js';
 import couponRoute from './routes/coupon.route.js';
 import orderRoute from './routes/order.route.js';
+import contactRoute from './routes/contact.route.js';
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use('/api/v1', productRoute);
 app.use('/api/v1', cartRoute);
 app.use('/api/v1', couponRoute);
 app.use('/api/v1', orderRoute);
+app.use('/api/v1', contactRoute);
 
 app.get('/healthCheck', (req, res) => {
   res.status(200).json({ success: true, message: 'Server is healthy' });

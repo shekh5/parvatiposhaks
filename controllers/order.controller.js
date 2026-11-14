@@ -2,7 +2,10 @@ import Order from '../models/order.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { sendResponse } from '../utils/apiResponse.js';
+import config from '../config/index.js';
+import { loadCart } from '../services/cart.service.js';
 import { cancelOrder, changeOrderStatus, placeOrder } from '../services/order.service.js';
+import { computeTotals, findValidCoupon } from '../services/pricing.service.js';
 
 export const checkout = asyncHandler(async (req, res) => {
   const { shippingInfo, paymentMethod, couponCode } = req.body;
@@ -104,4 +107,20 @@ export const deleteOrder = asyncHandler(async (req, res) => {
   }
   await order.deleteOne();
   sendResponse(res, 200, 'Order deleted successfully');
+});
+
+// Totals for the current cart, so the storefront can show exactly what
+// checkout will charge before the order is placed
+export const checkoutSummary = asyncHandler(async (req, res) => {
+  const { lines, itemsPrice } = await loadCart(req.user._id);
+  if (lines.length === 0) throw new ApiError('Your cart is empty', 400);
+  const code = typeof req.query.couponCode === 'string' ? req.query.couponCode.trim() : '';
+  const coupon = code ? await findValidCoupon(code, req.user._id, itemsPrice) : null;
+  sendResponse(res, 200, 'Order summary', {
+    ...computeTotals(itemsPrice, coupon),
+    coupon: coupon ? coupon.code : null,
+    taxPercent: config.shop.taxPercent,
+    currency: config.shop.currency,
+    onlinePaymentAvailable: Boolean(config.razorpay.keyId && config.razorpay.keySecret),
+  });
 });

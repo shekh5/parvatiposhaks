@@ -84,6 +84,12 @@ All paths are under `/api/v1`. **U** needs a signed-in user, **A** needs an admi
 | PUT | `/product/:id/review` | U | `rating` 1 to 5, `comment`; one review per user |
 | DELETE | `/review/:id` | U | author or admin |
 
+### Contact
+| Method | Path | | Notes |
+|---|---|---|---|
+| POST | `/contact` | | `name`, `email`, `subject`, `message`; emailed to `SMTP_MAIL`. Answers 503 when no mailbox is configured |
+| POST | `/newsletter` | | `email` |
+
 ### Cart and wishlist
 | Method | Path | | Notes |
 |---|---|---|---|
@@ -91,6 +97,7 @@ All paths are under `/api/v1`. **U** needs a signed-in user, **A** needs an admi
 | POST | `/cart/items` | U | `productId`, `quantity`, `variantId` when the product has options |
 | PUT | `/cart/items/:itemId` | U | `quantity` |
 | DELETE | `/cart/items/:itemId` | U | |
+| PUT | `/cart` | U | `items: [{ productId, variantId, quantity }]`; replaces the whole cart |
 | DELETE | `/cart` | U | empties the cart |
 | GET | `/wishlist` | U | |
 | POST, DELETE | `/wishlist/:productId` | U | |
@@ -100,6 +107,7 @@ All paths are under `/api/v1`. **U** needs a signed-in user, **A** needs an admi
 | Method | Path | | Notes |
 |---|---|---|---|
 | POST | `/checkout` | U | `shippingInfo`, `paymentMethod` (`razorpay` or `cod`), optional `couponCode` |
+| GET | `/checkout/summary` | U | totals for the current cart; optional `couponCode` |
 | POST | `/payment/verify` | U | `razorpay_order_id`, `razorpay_payment_id`, `razorpay_signature` |
 | POST | `/payment/webhook` | | called by Razorpay |
 | GET | `/orders/me` | U | |
@@ -125,6 +133,7 @@ Checkout builds the order from the cart with prices, discount, tax and shipping 
 | PUT | `/admin/order/:id` | `status`: Processing to Shipped to Delivered, or Cancelled before shipping |
 | PUT | `/admin/order/:id/payment` | `paymentStatus`: `paid` (cash collected) or `refunded` |
 | DELETE | `/admin/order/:id` | delivered or cancelled orders only |
+| GET | `/admin/subscribers` | newsletter sign-ups |
 | GET | `/admin/stats` | revenue, orders by status, top products, low stock, users |
 
 Refunds are recorded here, not issued: refund the payment in the Razorpay dashboard, then mark the order `refunded`.

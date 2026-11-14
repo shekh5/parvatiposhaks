@@ -68,3 +68,36 @@ export const emptyCart = asyncHandler(async (req, res) => {
   await clearCart(req.user._id);
   await respondWithCart(res, req.user._id, 'Cart cleared');
 });
+
+// Replaces the whole cart in one call. The storefront keeps a cart in the
+// browser for guests and sends it here when the shopper signs in to check out.
+export const replaceCart = asyncHandler(async (req, res) => {
+  const merged = new Map();
+  for (const { productId, variantId = null, quantity } of req.body.items) {
+    const key = `${productId}:${variantId || ''}`;
+    const line = merged.get(key) || { product: productId, variantId, quantity: 0 };
+    line.quantity += quantity;
+    merged.set(key, line);
+  }
+
+  const items = [...merged.values()];
+  const products = await Product.find({ _id: { $in: items.map((item) => item.product) } });
+  const byId = new Map(products.map((product) => [String(product._id), product]));
+
+  for (const item of items) {
+    const product = byId.get(String(item.product));
+    if (!product) throw new ApiError('A product in your cart is no longer available', 409);
+    const { available } = resolveLine(product, item.variantId);
+    if (available < 1) throw new ApiError(`${product.name} is out of stock`, 409);
+    if (item.quantity > available) {
+      throw new ApiError(`Only ${available} of ${product.name} available`, 409);
+    }
+  }
+
+  await Cart.findOneAndUpdate(
+    { user: req.user._id },
+    { $set: { items } },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+  await respondWithCart(res, req.user._id, 'Cart updated');
+});
