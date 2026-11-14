@@ -1,73 +1,100 @@
 import express from 'express';
-import dotenv from 'dotenv';
-import productRoute from './routes/productRoute.route.js';
-import errorHandlerMiddleware from '../backend/middleware/error.middleware.js';
-import authRoute from './routes/auth.route.js';
-import orderRoute from './routes/order.route.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
 import fileUpload from 'express-fileupload';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import mongoSanitize from 'express-mongo-sanitize';
 import morgan from 'morgan';
+import config from './config/index.js';
 import logger from './utils/logger.js';
+import ApiError from './utils/apiError.js';
+import errorHandler from './middleware/error.middleware.js';
+import { rejectForeignOrigins } from './middleware/origin.middleware.js';
+import { apiLimiter } from './middleware/rateLimit.middleware.js';
+import authRoute from './routes/auth.route.js';
+import productRoute from './routes/product.route.js';
+import cartRoute from './routes/cart.route.js';
+import couponRoute from './routes/coupon.route.js';
+import orderRoute from './routes/order.route.js';
+import paymentRoute from './routes/payment.route.js';
+import adminRoute from './routes/admin.route.js';
+import contactRoute from './routes/contact.route.js';
 
 const app = express();
 
-// HTTP Request Logging
-const morganFormat = process.env.NODE_ENV !== "production" ? "dev" : "combined";
+if (config.isProduction) app.set('trust proxy', 1); // real client IPs behind a load balancer
+
 app.use(
-  morgan(morganFormat, {
+  morgan(config.isProduction ? 'combined' : 'dev', {
     stream: { write: (message) => logger.info(message.trim()) },
   })
 );
 
-// Security Middlewares
-app.use(helmet()); // Set security HTTP headers
-// Custom sanitization to avoid Express 5 req.query getter error
+// Product images are shown by the storefront, which may live on another domain
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(
+  cors({
+    origin: config.cors.origins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true,
+  })
+);
+// Login cookies are sent cross-site in production, so requests that change
+// anything must come from the storefront itself (protection against CSRF)
+app.use('/api', rejectForeignOrigins);
+app.use('/api', apiLimiter);
+
+// Body size limits are per route: only requests that carry a profile photo may
+// be large, and only the Razorpay webhook needs its raw bytes kept for the
+// signature check. Each parser skips bodies an earlier one already read.
+const API = '/api/v1';
+app.use(
+  `${API}/payment/webhook`,
+  express.json({
+    limit: '1mb',
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
+app.use([`${API}/signup`, `${API}/profile`], express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '100kb' }));
+app.use(cookieParser());
+// Multipart uploads (profile photos). HTML form posts are deliberately not parsed.
+app.use(fileUpload({ limits: { fileSize: 5 * 1024 * 1024 }, abortOnLimit: true }));
+
+// Strip MongoDB operators from user input. Must run after the body parsers.
+// (req.query is read-only in Express 5; query values are whitelisted where used.)
 app.use((req, res, next) => {
   if (req.body) mongoSanitize.sanitize(req.body);
   if (req.params) mongoSanitize.sanitize(req.params);
   next();
 });
 
-// Rate Limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100, // Limit each IP to 100 requests per `window`
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-  message: { message: 'Too many requests from this IP, please try again in 15 minutes!' },
-});
-if (process.env.NODE_ENV === 'production') {
-  app.use('/api', limiter);
+app.use(express.static(path.join(path.resolve(), 'public')));
+
+for (const route of [
+  authRoute,
+  productRoute,
+  cartRoute,
+  couponRoute,
+  orderRoute,
+  paymentRoute,
+  adminRoute,
+  contactRoute,
+]) {
+  app.use(API, route);
 }
 
-//middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(express.static(path.join(path.resolve(), 'public'))); //path for static files like images,css,js etc. we will put all our static files in public folder and access them from there
-app.use(
-  cors({
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true,
-  })
-);
-app.use(fileUpload());
-
-app.use('/api/v1', productRoute);
-app.use('/api/v1', authRoute);
-app.use('/api/v1', orderRoute);
 app.get('/healthCheck', (req, res) => {
-  res.status(200).json({ message: 'Server is healthy' });
+  res.status(200).json({ success: true, message: 'Server is healthy' });
 });
 
-app.use(errorHandlerMiddleware);
+app.use((req, res, next) => {
+  next(new ApiError(`Route not found: ${req.method} ${req.originalUrl}`, 404));
+});
 
-dotenv.config({ path: 'backend/.env' });
+app.use(errorHandler);
 
 export default app;

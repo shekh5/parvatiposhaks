@@ -1,5 +1,7 @@
 export default {
-  testEnvironment: "node",
+  testEnvironment: 'node',
   transform: {},
-  setupFiles: ["dotenv/config"]
+  setupFiles: ['<rootDir>/__tests__/helpers/env.js'],
+  testPathIgnorePatterns: ['/node_modules/', '/__tests__/helpers/'],
+  testTimeout: 30000,
 };

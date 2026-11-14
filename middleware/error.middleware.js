@@ -1,38 +1,43 @@
-import apiError from '../utils/api.Error.js';
+import ApiError from '../utils/apiError.js';
+import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
-export default (err, req, res, next) => {
-  err.statuscode = err.statuscode || 500;
-  err.message = err.message || 'Internal Server Error';
-
-  logger.error(`${err.statuscode} - ${err.message} - ${req.originalUrl} - ${req.method} - ${req.ip}`);
-  if (err.statuscode === 500) {
-      logger.error(err); // Log full stack trace for 500 errors
+// Translates known library errors into clean client errors
+const normalize = (err) => {
+  if (err instanceof ApiError) return err;
+  if (err.name === 'CastError') return new ApiError(`Invalid ${err.path}`, 400);
+  if (err.name === 'ValidationError') {
+    const errors = Object.values(err.errors || {}).map((e) => ({ field: e.path, message: e.message }));
+    return new ApiError(errors.map((e) => e.message).join(', ') || 'Validation failed', 400, errors);
   }
-
-  if (err.name === 'CastError') {
-    const message = `This is invalid resource ${err.path}`;
-    err = new apiError(message, 404);
-  }
-
   if (err.code === 11000) {
-    const message = `Duplicate ${Object.keys(err.keyValue)} entered. already exists`;
-    err = new apiError(message, 400);
+    return new ApiError(`${Object.keys(err.keyValue || {}).join(', ')} already exists`, 409);
+  }
+  if (err.name === 'JsonWebTokenError') return new ApiError('Invalid token. Please sign in again', 401);
+  if (err.name === 'TokenExpiredError') return new ApiError('Token expired. Please sign in again', 401);
+  if (err.type === 'entity.parse.failed') return new ApiError('Malformed JSON in request body', 400);
+  if (err.type === 'entity.too.large') return new ApiError('Request body is too large', 413);
+  return err;
+};
+
+// eslint-disable-next-line no-unused-vars
+export default (err, req, res, next) => {
+  const error = normalize(err);
+  const statusCode = error.statusCode || 500;
+
+  if (statusCode >= 500) {
+    logger.error(`${statusCode} - ${error.message} - ${req.method} ${req.originalUrl}`, {
+      stack: error.stack,
+    });
+  } else {
+    logger.warn(`${statusCode} - ${error.message} - ${req.method} ${req.originalUrl}`);
   }
 
-  if (err.name === 'JsonWebTokenError') {
-    const message = 'JSON Web Token is invalid. Try again.';
-    err = new apiError(message, 401);
-  }
-
-  if (err.name === 'TokenExpiredError') {
-    const message = 'JSON Web Token is expired. Try again.';
-    err = new apiError(message, 401);
-  }
-
-  res.status(err.statuscode).json({
+  // Unexpected failures can carry internals; keep them out of production responses
+  const hide = statusCode >= 500 && !(error instanceof ApiError) && config.isProduction;
+  res.status(statusCode).json({
     success: false,
-    message: err.message,
-    // message:err.stack
+    message: hide ? 'Internal Server Error' : error.message,
+    errors: error.errors || [],
   });
 };

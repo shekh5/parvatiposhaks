@@ -1,8 +1,10 @@
-import moongoose from 'mongoose';
+import mongoose from 'mongoose';
+import config from '../config/index.js';
+import logger from '../utils/logger.js';
 
-const dbConnect = async () => {
-  await moongoose.connect(process.env.MONGO_DB_URL);
-  console.log('connected to database successfully');
+const dbConnect = async (url = config.mongoUrl) => {
+  await mongoose.connect(url);
+  logger.info('Connected to database successfully');
 };
 
 export default dbConnect;

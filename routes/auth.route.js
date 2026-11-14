@@ -1,36 +1,61 @@
-import express from 'express';
+import { Router } from 'express';
 import {
-  loginUser,
-  registerUser,
-  logout,
-  requestPasswordReset,
-  resetPassword,
+  deleteUser,
+  getSingleUser,
   getUserDetail,
+  getUserList,
+  loginUser,
+  logout,
+  logoutAll,
+  refreshSession,
+  registerUser,
+  requestPasswordReset,
+  resendVerification,
+  resetPassword,
   updatePassword,
   updateProfile,
-  getUserList,
-  getSingleUser,
   updateUserRole,
-  deleteUser,
+  verifyEmail,
 } from '../controllers/auth.controller.js';
-import { loginValidator, userValidator } from '../validators/index.js';
-import validateRequest from '../middleware/validator.middleware.js';
-import { roleBasedAccess, verifyUserAuth } from '../middleware/userAuth.middleware.js';
+import { roleBasedAccess, verifyUserAuth } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimit.middleware.js';
+import validate from '../middleware/validate.middleware.js';
+import {
+  forgotPasswordValidator,
+  loginValidator,
+  mongoIdParam,
+  resetPasswordValidator,
+  roleValidator,
+  signupValidator,
+  tokenParamValidator,
+  updatePasswordValidator,
+  updateProfileValidator,
+} from '../validators/index.js';
 
-const router = express.Router();
-router.route('/admin/users').get(verifyUserAuth, roleBasedAccess('admin'), getUserList); //admin get all users
+const router = Router();
+const admin = [verifyUserAuth, roleBasedAccess('admin')];
+
+router.post('/signup', authLimiter, signupValidator(), validate, registerUser);
+router.post('/signin', authLimiter, loginValidator(), validate, loginUser);
+router.post('/token/refresh', authLimiter, refreshSession);
+router.post('/logout', logout);
+router.post('/logout-all', verifyUserAuth, logoutAll);
+
+router.get('/email/verify/:token', tokenParamValidator(), validate, verifyEmail);
+router.post('/email/resend', authLimiter, verifyUserAuth, resendVerification);
+
+router.post('/password/forgot', authLimiter, forgotPasswordValidator(), validate, requestPasswordReset);
+router.post('/password/reset/:token', authLimiter, resetPasswordValidator(), validate, resetPassword);
+router.put('/password/update', verifyUserAuth, updatePasswordValidator(), validate, updatePassword);
+
+router.get('/profile', verifyUserAuth, getUserDetail);
+router.put('/profile', verifyUserAuth, updateProfileValidator(), validate, updateProfile);
+
+router.get('/admin/users', admin, getUserList);
 router
   .route('/admin/user/:id')
-  .get(verifyUserAuth, roleBasedAccess('admin'), getSingleUser) //admin get single user details
-  .put(verifyUserAuth, roleBasedAccess('admin'), updateUserRole) //admin update user role
-  .delete(verifyUserAuth, roleBasedAccess('admin'), deleteUser); //admin delete user
+  .get(admin, mongoIdParam(), validate, getSingleUser)
+  .put(admin, roleValidator(), validate, updateUserRole)
+  .delete(admin, mongoIdParam(), validate, deleteUser);
 
-router.post('/signup', userValidator(), validateRequest, registerUser);
-router.post('/SignIn', loginValidator(), validateRequest, loginUser);
-router.route('/logout').post(logout);
-router.route('/password/forgot').post(requestPasswordReset); //forgot password
-router.route('/password/reset/:token').post(resetPassword); //reset password
-router.route('/profile').get(verifyUserAuth, getUserDetail); //get user details
-router.put('/password/update', verifyUserAuth, updatePassword); //update password
-router.post('/profile/update', verifyUserAuth, updateProfile); //update profile
 export default router;
