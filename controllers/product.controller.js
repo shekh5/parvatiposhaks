@@ -6,7 +6,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import config from '../config/index.js';
 
-const EDITABLE = ['name', 'description', 'price', 'category', 'stock', 'images', 'variants'];
+const EDITABLE = ['name', 'description', 'price', 'mrp', 'category', 'stock', 'images', 'variants'];
 
 // Only whitelisted fields ever reach the database
 const pick = (body) =>

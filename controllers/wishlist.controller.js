@@ -7,7 +7,7 @@ import { sendResponse } from '../utils/apiResponse.js';
 const loadWishlist = async (userId) => {
   const user = await User.findById(userId).populate(
     'wishlist',
-    'name price images category stock ratings numOfReviews'
+    'name price mrp images category stock variants ratings numOfReviews'
   );
   return user.wishlist.filter(Boolean);
 };

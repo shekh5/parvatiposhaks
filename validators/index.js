@@ -79,6 +79,11 @@ const productFields = (optional) => {
     field('description').trim().notEmpty().withMessage('Description is required'),
     field('price').isFloat({ min: 0 }).withMessage('Price must be a number of 0 or more').toFloat(),
     field('category').trim().notEmpty().withMessage('Category is required'),
+    body('mrp')
+      .optional({ values: 'null' })
+      .isFloat({ min: 0 })
+      .withMessage('MRP must be a number of 0 or more')
+      .toFloat(),
     body('stock')
       .optional()
       .isInt({ min: 0 })

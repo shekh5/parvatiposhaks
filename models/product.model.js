@@ -19,6 +19,8 @@ const productSchema = new mongoose.Schema(
       min: [0, 'Price cannot be negative'],
       max: [99999999, 'Price cannot exceed 8 digits'],
     },
+    // Optional list price. When it is higher than price, the storefront shows a discount
+    mrp: { type: Number, min: [0, 'MRP cannot be negative'], default: null },
     ratings: { type: Number, default: 0 },
     numOfReviews: { type: Number, default: 0 },
     images: [

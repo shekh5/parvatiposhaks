@@ -125,7 +125,7 @@ Checkout builds the order from the cart with prices, discount, tax and shipping 
 | GET | `/admin/users` | |
 | GET, PUT, DELETE | `/admin/user/:id` | PUT takes `role` (`user` or `admin`) |
 | GET | `/admin/products` | full list |
-| POST | `/admin/product` | `name`, `description`, `price`, `category`, `stock`, `images`, `variants` |
+| POST | `/admin/product` | `name`, `description`, `price`, `mrp` (optional list price), `category`, `stock`, `images`, `variants` |
 | PUT, DELETE | `/admin/product/:id` | |
 | GET, POST | `/admin/coupons` | `code`, `type` (`percent` or `flat`), `value`, `minOrderValue`, `maxDiscount`, `expiresAt`, `usageLimit`, `perUserLimit`, `active` |
 | PUT, DELETE | `/admin/coupon/:id` | |

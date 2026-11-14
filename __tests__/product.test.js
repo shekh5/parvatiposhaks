@@ -186,3 +186,23 @@ describe('reviews', () => {
     expect(await mongoose.model('Review').countDocuments({ product: product._id })).toBe(0);
   });
 });
+
+describe('list price', () => {
+  it('stores an optional MRP and validates it', async () => {
+    const body = { name: 'Priced Saree', description: 'd', price: 1500, mrp: 1999, category: 'Sarees' };
+    const created = await admin.agent.post(api('/admin/product')).send(body);
+    expect(created.status).toBe(201);
+    expect(created.body.data.product.mrp).toBe(1999);
+
+    const listed = await request(app).get(api(`/product/${created.body.data.product._id}`));
+    expect(listed.body.data.product.mrp).toBe(1999);
+
+    const cleared = await admin.agent
+      .put(api(`/admin/product/${created.body.data.product._id}`))
+      .send({ mrp: null });
+    expect(cleared.body.data.product.mrp).toBeNull();
+
+    const bad = await admin.agent.post(api('/admin/product')).send({ ...body, mrp: -1 });
+    expect(bad.status).toBe(400);
+  });
+});
