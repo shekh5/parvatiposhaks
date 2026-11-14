@@ -1,5 +1,4 @@
 import Coupon from '../models/coupon.model.js';
-import Order from '../models/order.model.js';
 import ApiError from '../utils/apiError.js';
 import config from '../config/index.js';
 
@@ -44,31 +43,39 @@ export async function findValidCoupon(code, userId, itemsPrice) {
   if (itemsPrice < coupon.minOrderValue) {
     throw new ApiError(`This coupon needs a minimum order of ${coupon.minOrderValue}`, 400);
   }
-  const usedByUser = await Order.countDocuments({
-    user: userId,
-    coupon: coupon.code,
-    orderStatus: { $ne: 'Cancelled' },
-  });
-  if (usedByUser >= coupon.perUserLimit) {
+  if ((coupon.usedBy?.get(String(userId)) || 0) >= coupon.perUserLimit) {
     throw new ApiError('You have already used this coupon', 400);
   }
   return coupon;
 }
 
-// Counts one redemption, respecting the total limit even under concurrent checkouts
-export async function claimCoupon(coupon) {
+// Counts one redemption. The total limit and the per-user limit are both
+// checked inside the update itself, so concurrent checkouts cannot exceed them.
+export async function claimCoupon(coupon, userId) {
+  const mine = `usedBy.${userId}`;
   const result = await Coupon.updateOne(
     {
       _id: coupon._id,
       active: true,
-      $or: [{ usageLimit: null }, { $expr: { $lt: ['$usedCount', '$usageLimit'] } }],
+      $and: [
+        { $or: [{ usageLimit: null }, { $expr: { $lt: ['$usedCount', '$usageLimit'] } }] },
+        { $expr: { $lt: [{ $ifNull: [`$${mine}`, 0] }, '$perUserLimit'] } },
+      ],
     },
-    { $inc: { usedCount: 1 } }
+    { $inc: { usedCount: 1, [mine]: 1 } }
   );
   return result.modifiedCount === 1;
 }
 
-export async function releaseCoupon(code) {
+export async function releaseCoupon(code, userId) {
   if (!code) return;
-  await Coupon.updateOne({ code, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } });
+  const mine = `usedBy.${userId}`;
+  const result = await Coupon.updateOne(
+    { code, usedCount: { $gt: 0 }, [mine]: { $gt: 0 } },
+    { $inc: { usedCount: -1, [mine]: -1 } }
+  );
+  // Orders placed before per-user counting only have the total to give back
+  if (result.modifiedCount === 0) {
+    await Coupon.updateOne({ code, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } });
+  }
 }

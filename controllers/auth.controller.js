@@ -2,6 +2,7 @@ import User from '../models/user.model.js';
 import Cart from '../models/cart.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { getPagination, paginate } from '../utils/pagination.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import { hashToken } from '../utils/tokens.js';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../services/email.service.js';
@@ -177,8 +178,8 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
 // ---------- admin ----------
 export const getUserList = asyncHandler(async (req, res) => {
-  const users = await User.find().sort({ createdAt: -1 });
-  sendResponse(res, 200, 'User list retrieved successfully', { users, count: users.length });
+  const { items: users, ...page } = await paginate(User, {}, getPagination(req.query));
+  sendResponse(res, 200, 'User list retrieved successfully', { users, ...page });
 });
 
 export const getSingleUser = asyncHandler(async (req, res) => {

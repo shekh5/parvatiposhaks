@@ -1,4 +1,5 @@
 import Cart from '../models/cart.model.js';
+import Product from '../models/product.model.js';
 import ApiError from '../utils/apiError.js';
 
 const variantLabel = (variant) => [variant.size, variant.color].filter(Boolean).join(' / ');
@@ -83,4 +84,36 @@ export const cartView = ({ lines, itemsPrice }) => ({
 
 export async function clearCart(userId) {
   await Cart.updateOne({ user: userId }, { $set: { items: [] } });
+}
+
+// Swaps the cart for the given lines after checking each against current stock.
+// Nothing is saved unless every line is valid.
+export async function replaceCartItems(userId, requested) {
+  const merged = new Map();
+  for (const { productId, variantId = null, quantity } of requested) {
+    const key = `${productId}:${variantId || ''}`;
+    const line = merged.get(key) || { product: productId, variantId, quantity: 0 };
+    line.quantity += quantity;
+    merged.set(key, line);
+  }
+
+  const items = [...merged.values()];
+  const products = await Product.find({ _id: { $in: items.map((item) => item.product) } });
+  const byId = new Map(products.map((product) => [String(product._id), product]));
+
+  for (const item of items) {
+    const product = byId.get(String(item.product));
+    if (!product) throw new ApiError('A product in your cart is no longer available', 409);
+    const { available } = resolveLine(product, item.variantId);
+    if (available < 1) throw new ApiError(`${product.name} is out of stock`, 409);
+    if (item.quantity > available) {
+      throw new ApiError(`Only ${available} of ${product.name} available`, 409);
+    }
+  }
+
+  await Cart.findOneAndUpdate(
+    { user: userId },
+    { $set: { items } },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
 }

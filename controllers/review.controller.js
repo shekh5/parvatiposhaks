@@ -2,6 +2,7 @@ import Product from '../models/product.model.js';
 import Review from '../models/review.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { getPagination, paginate } from '../utils/pagination.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import { recalculateProductRating } from '../services/review.service.js';
 
@@ -22,11 +23,16 @@ export const upsertReview = asyncHandler(async (req, res) => {
 export const getProductReviews = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id).select('ratings numOfReviews');
   if (!product) throw new ApiError('Product not found', 404);
-  const reviews = await Review.find({ product: product._id }).sort({ createdAt: -1 });
+  const { items: reviews, ...page } = await paginate(
+    Review,
+    { product: product._id },
+    getPagination(req.query, { defaultLimit: 50 })
+  );
   sendResponse(res, 200, 'Product reviews retrieved successfully', {
     reviews,
     ratings: product.ratings,
     numOfReviews: product.numOfReviews,
+    ...page,
   });
 });
 

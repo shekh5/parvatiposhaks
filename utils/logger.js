@@ -2,15 +2,18 @@ import winston from 'winston';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test';
+// Hosting platforms collect what a server prints, and local files vanish with
+// the container. Files are written in development, or when asked for.
+const toFiles = process.env.LOG_TO_FILES ? process.env.LOG_TO_FILES === 'true' : !isProduction;
 
-const fileFormat = winston.format.combine(
+const jsonFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
   winston.format.json()
 );
 
-const consoleFormat = winston.format.combine(
+const readableFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf(
@@ -18,21 +21,23 @@ const consoleFormat = winston.format.combine(
   )
 );
 
-const transports = isTest
-  ? [new winston.transports.Console({ silent: true })]
-  : [
+const transports = [];
+if (isTest) {
+  transports.push(new winston.transports.Console({ silent: true }));
+} else {
+  transports.push(new winston.transports.Console({ format: isProduction ? jsonFormat : readableFormat }));
+  if (toFiles) {
+    transports.push(
       new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-      new winston.transports.File({ filename: 'logs/combined.log' }),
-    ];
+      new winston.transports.File({ filename: 'logs/combined.log' })
+    );
+  }
+}
 
 const logger = winston.createLogger({
   level: isProduction ? 'info' : 'debug',
-  format: fileFormat,
+  format: jsonFormat,
   transports,
 });
-
-if (!isProduction && !isTest) {
-  logger.add(new winston.transports.Console({ format: consoleFormat }));
-}
 
 export default logger;

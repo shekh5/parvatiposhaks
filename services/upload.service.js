@@ -9,15 +9,25 @@ cloudinary.config({
   api_secret: config.cloudinary.apiSecret,
 });
 
-// The avatar can arrive as a multipart file or as a data URI / URL string in the body
+const IMAGE_DATA_URI = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/;
+
+// The avatar can arrive as a multipart file or as an image data URI in the body
 export const getAvatarInput = (req) => {
   const file = req.files?.avatar;
   if (file) {
-    if (!file.mimetype?.startsWith('image/')) throw new ApiError('Avatar must be an image', 400);
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype || '')) {
+      throw new ApiError('Avatar must be a PNG, JPEG, WebP or GIF image', 400);
+    }
     return `data:${file.mimetype};base64,${file.data.toString('base64')}`;
   }
   const value = req.body?.avatar;
-  return typeof value === 'string' && value.trim() ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  // Only image data sent by the browser. A web address here would make the
+  // image host fetch a URL chosen by the visitor.
+  if (!IMAGE_DATA_URI.test(value)) {
+    throw new ApiError('Avatar must be a PNG, JPEG, WebP or GIF image', 400);
+  }
+  return value;
 };
 
 export async function uploadAvatar(source) {

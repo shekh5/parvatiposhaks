@@ -13,10 +13,19 @@ const couponSchema = new mongoose.Schema(
     usageLimit: { type: Number, default: null, min: 1 },
     usedCount: { type: Number, default: 0, min: 0 },
     perUserLimit: { type: Number, default: 1, min: 1 },
+    // Redemptions per user id, counted in the same update that claims the coupon
+    usedBy: { type: Map, of: Number, default: {} },
     active: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
+
+const hideCounters = (doc, ret) => {
+  delete ret.usedBy;
+  delete ret.__v;
+  return ret;
+};
+couponSchema.set('toJSON', { transform: hideCounters });
 
 couponSchema.path('value').validate(function (value) {
   return this.type !== 'percent' || value <= 100;

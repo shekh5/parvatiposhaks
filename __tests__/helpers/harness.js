@@ -6,7 +6,8 @@ import request from 'supertest';
 // Everything the app would have sent to outside services is captured here
 export const sentEmails = [];
 export const razorpayOrders = [];
-export const razorpay = { failNext: false };
+export const razorpay = { failNext: false, failNextRefund: false };
+export const razorpayRefunds = [];
 
 let memoryServer;
 let app;
@@ -45,6 +46,17 @@ export async function startApp() {
             return order;
           },
         };
+        this.payments = {
+          refund: async (paymentId, options) => {
+            if (razorpay.failNextRefund) {
+              razorpay.failNextRefund = false;
+              throw new Error('refund declined');
+            }
+            const refund = { id: `rfnd_test_${++counter}`, payment_id: paymentId, ...options };
+            razorpayRefunds.push(refund);
+            return refund;
+          },
+        };
       }
     },
   }));
@@ -73,6 +85,22 @@ export async function stopApp() {
 }
 
 export const api = (path) => `/api/v1${path}`;
+
+// Runs `fn` with one config value changed, and always puts the old value back.
+// Example: await withConfig('shop.shippingFee', 0, () => checkout(agent))
+export async function withConfig(path, value, fn) {
+  const { default: config } = await import('../../config/index.js');
+  const keys = path.split('.');
+  const last = keys.pop();
+  const target = keys.reduce((object, key) => object[key], config);
+  const previous = target[last];
+  target[last] = value;
+  try {
+    return await fn();
+  } finally {
+    target[last] = previous;
+  }
+}
 
 // Signs up a fresh user and returns a cookie-keeping agent for them
 export async function signUp(overrides = {}) {

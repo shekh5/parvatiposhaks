@@ -29,6 +29,14 @@ export async function createRazorpayOrder(amount, receipt) {
   }
 }
 
+// Sends the money for a captured payment back to the buyer
+export async function refundPayment(razorpayPaymentId, amount) {
+  return getClient().payments.refund(razorpayPaymentId, {
+    amount: Math.round(amount * 100),
+    speed: 'normal',
+  });
+}
+
 const safeEqual = (a, b) => {
   const left = Buffer.from(String(a));
   const right = Buffer.from(String(b));

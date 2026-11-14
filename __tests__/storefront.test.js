@@ -9,6 +9,7 @@ import {
   signUpAdmin,
   startApp,
   stopApp,
+  withConfig,
 } from './helpers/harness.js';
 
 let app;
@@ -121,16 +122,14 @@ describe('contact and newsletter', () => {
   });
 
   it('says so when no mailbox is configured, so messages are not lost silently', async () => {
-    const { default: config } = await import('../config/index.js');
-    const mailbox = config.smtp.mail;
-    config.smtp.mail = '';
-    const res = await request(app).post(api('/contact')).send({
-      name: 'Asha',
-      email: 'asha@shop.test',
-      subject: 'Hi',
-      message: 'Hello',
-    });
-    config.smtp.mail = mailbox;
+    const res = await withConfig('smtp.mail', '', () =>
+      request(app).post(api('/contact')).send({
+        name: 'Asha',
+        email: 'asha@shop.test',
+        subject: 'Hi',
+        message: 'Hello',
+      })
+    );
     expect(res.status).toBe(503);
   });
 

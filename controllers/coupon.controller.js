@@ -1,6 +1,8 @@
 import Coupon from '../models/coupon.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import pick from '../utils/pick.js';
+import { getPagination, paginate } from '../utils/pagination.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import { loadCart } from '../services/cart.service.js';
 import { computeTotals, findValidCoupon } from '../services/pricing.service.js';
@@ -17,26 +19,21 @@ const FIELDS = [
   'active',
 ];
 
-const pick = (body) =>
-  FIELDS.reduce((picked, key) => {
-    if (body[key] !== undefined) picked[key] = body[key];
-    return picked;
-  }, {});
 
 export const createCoupon = asyncHandler(async (req, res) => {
-  const coupon = await Coupon.create(pick(req.body));
+  const coupon = await Coupon.create(pick(req.body, FIELDS));
   sendResponse(res, 201, 'Coupon created successfully', { coupon });
 });
 
 export const getCoupons = asyncHandler(async (req, res) => {
-  const coupons = await Coupon.find().sort({ createdAt: -1 });
-  sendResponse(res, 200, 'Coupons retrieved successfully', { coupons, count: coupons.length });
+  const { items: coupons, ...page } = await paginate(Coupon, {}, getPagination(req.query));
+  sendResponse(res, 200, 'Coupons retrieved successfully', { coupons, ...page });
 });
 
 export const updateCoupon = asyncHandler(async (req, res) => {
   const coupon = await Coupon.findById(req.params.id);
   if (!coupon) throw new ApiError('Coupon not found', 404);
-  coupon.set(pick(req.body));
+  coupon.set(pick(req.body, FIELDS));
   await coupon.save();
   sendResponse(res, 200, 'Coupon updated successfully', { coupon });
 });

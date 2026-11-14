@@ -13,6 +13,8 @@ import {
   startApp,
   stopApp,
   webhookSignature,
+  withConfig,
+  razorpayRefunds,
 } from './helpers/harness.js';
 
 let app;
@@ -332,12 +334,79 @@ describe('razorpay checkout', () => {
     expect((await Order().findById(order._id)).orderStatus).toBe('Cancelled');
     expect(await stockOf(product)).toBe(4);
 
-    // Money that arrives afterwards is recorded for refund; the order stays cancelled
+    // Money that arrives afterwards is sent straight back; the order stays cancelled
     await sendWebhook(captured(payment.razorpayOrderId, 'pay_late'));
     const stored = await Order().findById(order._id);
-    expect(stored).toMatchObject({ orderStatus: 'Cancelled', paymentStatus: 'paid' });
-    expect(stored.statusHistory.at(-1).note).toMatch(/refund required/);
+    expect(stored).toMatchObject({ orderStatus: 'Cancelled', paymentStatus: 'refunded' });
+    expect(stored.statusHistory.at(-1).note).toBe('Refund issued');
+    expect(razorpayRefunds.at(-1)).toMatchObject({ payment_id: 'pay_late', amount: order.totalPrice * 100 });
     expect(await stockOf(product)).toBe(4);
+
+    // The same webhook again must not refund twice
+    const refundsSoFar = razorpayRefunds.length;
+    await sendWebhook(captured(payment.razorpayOrderId, 'pay_late'));
+    expect(razorpayRefunds.length).toBe(refundsSoFar);
+  });
+
+  it('refunds a paid order automatically when it is cancelled', async () => {
+    const product = await createProduct({ price: 400, stock: 3 });
+    const { agent, order, payment } = await start(product, 2);
+    await agent.post(api('/payment/verify')).send({
+      razorpay_order_id: payment.razorpayOrderId,
+      razorpay_payment_id: 'pay_refund_me',
+      razorpay_signature: paymentSignature(payment.razorpayOrderId, 'pay_refund_me'),
+    });
+
+    const res = await agent.post(api(`/order/${order._id}/cancel`));
+    expect(res.status).toBe(200);
+    expect(res.body.data.order).toMatchObject({ orderStatus: 'Cancelled', paymentStatus: 'refunded' });
+    expect(razorpayRefunds.at(-1)).toMatchObject({ payment_id: 'pay_refund_me', amount: 93000 });
+    expect(res.body.data.order.paymentInfo.refundId).toBe(razorpayRefunds.at(-1).id);
+    expect(await stockOf(product)).toBe(3);
+  });
+
+  it('flags the order for a manual refund when the gateway refuses', async () => {
+    const product = await createProduct();
+    const { agent, order, payment } = await start(product);
+    await agent.post(api('/payment/verify')).send({
+      razorpay_order_id: payment.razorpayOrderId,
+      razorpay_payment_id: 'pay_stuck',
+      razorpay_signature: paymentSignature(payment.razorpayOrderId, 'pay_stuck'),
+    });
+
+    razorpay.failNextRefund = true;
+    const res = await agent.post(api(`/order/${order._id}/cancel`));
+    expect(res.status).toBe(200);
+    expect(res.body.data.order).toMatchObject({ orderStatus: 'Cancelled', paymentStatus: 'paid' });
+    expect(res.body.data.order.statusHistory.at(-1).note).toMatch(/refund required/);
+
+    // An admin can then record the refund made by hand
+    const marked = await admin.agent
+      .put(api(`/admin/order/${order._id}/payment`))
+      .send({ paymentStatus: 'refunded' });
+    expect(marked.body.data.order.paymentStatus).toBe('refunded');
+  });
+
+  it('never lets one shopper claim a once-per-person coupon twice at the same moment', async () => {
+    const { claimCoupon, releaseCoupon } = await import('../services/pricing.service.js');
+    await admin.agent.post(api('/admin/coupons')).send({ code: 'RACE', type: 'flat', value: 10, usageLimit: 3 });
+    const coupon = await mongoose.model('Coupon').findOne({ code: 'RACE' });
+    const shopperId = new mongoose.Types.ObjectId();
+    const otherId = new mongoose.Types.ObjectId();
+
+    const claims = await Promise.all([1, 2, 3, 4].map(() => claimCoupon(coupon, shopperId)));
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(await claimCoupon(coupon, otherId)).toBe(true);
+    expect((await mongoose.model('Coupon').findOne({ code: 'RACE' })).usedCount).toBe(2);
+
+    await releaseCoupon('RACE', shopperId);
+    expect(await claimCoupon(coupon, shopperId)).toBe(true);
+    expect(await claimCoupon(coupon, new mongoose.Types.ObjectId())).toBe(true);
+    // Total limit of 3 is now reached
+    expect(await claimCoupon(coupon, new mongoose.Types.ObjectId())).toBe(false);
+
+    const listed = await admin.agent.get(api('/admin/coupons'));
+    expect(listed.body.data.coupons.find((c) => c.code === 'RACE').usedBy).toBeUndefined();
   });
 
   it('skips the gateway when a coupon covers the whole order', async () => {
@@ -347,11 +416,9 @@ describe('razorpay checkout', () => {
     const before = razorpayOrders.length;
 
     // Shipping is still charged on a fully discounted order, so remove it here
-    const { default: config } = await import('../config/index.js');
-    const shippingFee = config.shop.shippingFee;
-    config.shop.shippingFee = 0;
-    const res = await checkout(agent, { paymentMethod: 'razorpay', couponCode: 'FREE' });
-    config.shop.shippingFee = shippingFee;
+    const res = await withConfig('shop.shippingFee', 0, () =>
+      checkout(agent, { paymentMethod: 'razorpay', couponCode: 'FREE' })
+    );
     expect(res.status).toBe(201);
     expect(res.body.data.payment).toBeNull();
     expect(res.body.data.order).toMatchObject({

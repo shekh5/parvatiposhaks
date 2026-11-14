@@ -1,6 +1,7 @@
-import Order from '../models/order.model.js';
+import Order, { ORDER_STATUSES } from '../models/order.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { getPagination, pageInfo, paginate } from '../utils/pagination.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import config from '../config/index.js';
 import { loadCart } from '../services/cart.service.js';
@@ -20,8 +21,12 @@ export const checkout = asyncHandler(async (req, res) => {
 });
 
 export const myOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 });
-  sendResponse(res, 200, 'Orders retrieved successfully', { orders, count: orders.length });
+  const { items: orders, ...page } = await paginate(
+    Order,
+    { user: req.user._id },
+    getPagination(req.query, { defaultLimit: 50 })
+  );
+  sendResponse(res, 200, 'Orders retrieved successfully', { orders, ...page });
 });
 
 // Owners can see their own order; admins can see any
@@ -43,16 +48,15 @@ export const cancelMyOrder = asyncHandler(async (req, res) => {
 
 // ---------- admin ----------
 export const getAllOrders = asyncHandler(async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
-  const filter = typeof req.query.status === 'string' ? { orderStatus: req.query.status } : {};
+  const pagination = getPagination(req.query);
+  const filter = ORDER_STATUSES.includes(req.query.status) ? { orderStatus: req.query.status } : {};
 
   const [orders, count, revenue] = await Promise.all([
     Order.find(filter)
       .populate('user', 'name email')
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit),
+      .skip(pagination.skip)
+      .limit(pagination.limit),
     Order.countDocuments(filter),
     Order.aggregate([
       { $match: { paymentStatus: 'paid' } },
@@ -62,9 +66,7 @@ export const getAllOrders = asyncHandler(async (req, res) => {
 
   sendResponse(res, 200, 'Orders retrieved successfully', {
     orders,
-    count,
-    currentPage: page,
-    totalPages: Math.ceil(count / limit),
+    ...pageInfo(count, pagination),
     totalAmount: revenue[0]?.total || 0,
   });
 });

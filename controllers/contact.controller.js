@@ -1,6 +1,7 @@
 import Subscriber from '../models/subscriber.model.js';
 import ApiError from '../utils/apiError.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { getPagination, paginate } from '../utils/pagination.js';
 import { sendResponse } from '../utils/apiResponse.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
@@ -37,9 +38,6 @@ export const subscribeNewsletter = asyncHandler(async (req, res) => {
 });
 
 export const getSubscribers = asyncHandler(async (req, res) => {
-  const subscribers = await Subscriber.find().sort({ createdAt: -1 });
-  sendResponse(res, 200, 'Subscribers retrieved successfully', {
-    subscribers,
-    count: subscribers.length,
-  });
+  const { items: subscribers, ...page } = await paginate(Subscriber, {}, getPagination(req.query));
+  sendResponse(res, 200, 'Subscribers retrieved successfully', { subscribers, ...page });
 });

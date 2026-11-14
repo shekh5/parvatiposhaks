@@ -31,6 +31,7 @@ const orderSchema = new mongoose.Schema(
     paymentInfo: {
       razorpayOrderId: { type: String, index: true, sparse: true },
       razorpayPaymentId: String,
+      refundId: String,
       // Carried over from orders created before the payment rework
       id: String,
       status: String,
