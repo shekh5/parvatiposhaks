@@ -1,14 +1,19 @@
 import winston from 'winston';
 
-// Define the custom format for logging
-const logFormat = winston.format.combine(
+const isProduction = process.env.NODE_ENV === 'production';
+const isTest = process.env.NODE_ENV === 'test';
+// Hosting platforms collect what a server prints, and local files vanish with
+// the container. Files are written in development, or when asked for.
+const toFiles = process.env.LOG_TO_FILES ? process.env.LOG_TO_FILES === 'true' : !isProduction;
+
+const jsonFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
   winston.format.json()
 );
 
-const consoleFormat = winston.format.combine(
+const readableFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf(
@@ -16,25 +21,23 @@ const consoleFormat = winston.format.combine(
   )
 );
 
-// Create the logger instance
-const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  format: logFormat,
-  transports: [
-    // Write all logs with importance level of `error` or higher to `error.log`
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-    // Write all logs with importance level of `info` or higher to `combined.log`
-    new winston.transports.File({ filename: 'logs/combined.log' }),
-  ],
-});
-
-// If we're not in production, log to the `console` as well
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    })
-  );
+const transports = [];
+if (isTest) {
+  transports.push(new winston.transports.Console({ silent: true }));
+} else {
+  transports.push(new winston.transports.Console({ format: isProduction ? jsonFormat : readableFormat }));
+  if (toFiles) {
+    transports.push(
+      new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+      new winston.transports.File({ filename: 'logs/combined.log' })
+    );
+  }
 }
+
+const logger = winston.createLogger({
+  level: isProduction ? 'info' : 'debug',
+  format: jsonFormat,
+  transports,
+});
 
 export default logger;

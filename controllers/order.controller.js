@@ -1,107 +1,128 @@
-import Order from '../models/order.model.js';
-import asyncHandler from '../utils/async-handler.js';
-import Product from '../models/product.models.js';
-import User from '../models/user.models.js';
-import ErrorHandler from '../utils/api.Error.js';
-import apiResponse from '../utils/api.Response.js';
-// import apiFunctionality from "../utils/api.functionality.js";
+import Order, { ORDER_STATUSES } from '../models/order.model.js';
+import ApiError from '../utils/apiError.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import { getPagination, pageInfo, paginate } from '../utils/pagination.js';
+import { sendResponse } from '../utils/apiResponse.js';
+import config from '../config/index.js';
+import { loadCart } from '../services/cart.service.js';
+import { cancelOrder, changeOrderStatus, placeOrder } from '../services/order.service.js';
+import { computeTotals, findValidCoupon } from '../services/pricing.service.js';
 
-async function updateQuanity(id, quantity) {
-  const product = await Product.findById(id);
-  if (!product) {
-    return next(new ErrorHandler('Product not found', 404));
-  }
-  product.stock -= quantity;
-  await product.save({ validateBeforeSave: false });
-}
-
-//create new order
-const createOrder = asyncHandler(async (req, res, next) => {
-  const { shippingInfo, orderItems, paymentInfo, itemsPrice, taxPrice, shippingPrice, totalPrice } =
-    req.body;
-
-  const order = await Order.create({
+export const checkout = asyncHandler(async (req, res) => {
+  const { shippingInfo, paymentMethod, couponCode } = req.body;
+  const { order, payment } = await placeOrder({
+    user: req.user,
     shippingInfo,
-    orderItems,
-    user: req.user._id,
-    paymentInfo,
-    itemsPrice,
-    taxPrice,
-    shippingPrice,
-    totalPrice,
-    paidAt: Date.now(),
+    paymentMethod,
+    couponCode,
   });
-
-  if (!order) {
-    return next(new ErrorHandler('Failed to create order', 500));
-  } else {
-    return res.status(201).json({ message: 'Order created successfully', order });
-  }
+  const message = payment ? 'Order created. Complete the payment to confirm it' : 'Order placed successfully';
+  sendResponse(res, 201, message, { order, payment });
 });
 
-//get single order
-const getSingleOrder = asyncHandler(async (req, res, next) => {
+export const myOrders = asyncHandler(async (req, res) => {
+  const { items: orders, ...page } = await paginate(
+    Order,
+    { user: req.user._id },
+    getPagination(req.query, { defaultLimit: 50 })
+  );
+  sendResponse(res, 200, 'Orders retrieved successfully', { orders, ...page });
+});
+
+// Owners can see their own order; admins can see any
+export const getSingleOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id).populate('user', 'name email');
-  if (!order) {
-    return next(new ErrorHandler('Order not found', 404));
-  } else {
-    return res.status(200).json({ message: 'Order details', order });
+  const isOwner = order && String(order.user?._id) === String(req.user._id);
+  if (!order || (!isOwner && req.user.role !== 'admin')) {
+    throw new ApiError('Order not found', 404);
   }
+  sendResponse(res, 200, 'Order retrieved successfully', { order });
 });
 
-//all my orders
-const myOrders = asyncHandler(async (req, res, next) => {
-  const orders = await Order.find({ user: req.user._id });
-  if (!orders || orders.length === 0) {
-    return next(new ErrorHandler('No orders found for this user', 404));
-  } else {
-    return res.status(200).json({ message: 'My orders', orders });
-  }
+export const cancelMyOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+  if (!order) throw new ApiError('Order not found', 404);
+  const cancelled = await cancelOrder(order, 'Cancelled by customer');
+  sendResponse(res, 200, 'Order cancelled', { order: cancelled });
 });
 
-//get all orders for admin
-const getAllOrders = asyncHandler(async (req, res, next) => {
-  const orders = await Order.find().populate('user', 'name email');
-  let totalAmount = 0;
-  orders.forEach((order) => {
-    totalAmount += order.totalPrice;
+// ---------- admin ----------
+export const getAllOrders = asyncHandler(async (req, res) => {
+  const pagination = getPagination(req.query);
+  const filter = ORDER_STATUSES.includes(req.query.status) ? { orderStatus: req.query.status } : {};
+
+  const [orders, count, revenue] = await Promise.all([
+    Order.find(filter)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .skip(pagination.skip)
+      .limit(pagination.limit),
+    Order.countDocuments(filter),
+    Order.aggregate([
+      { $match: { paymentStatus: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$totalPrice' } } },
+    ]),
+  ]);
+
+  sendResponse(res, 200, 'Orders retrieved successfully', {
+    orders,
+    ...pageInfo(count, pagination),
+    totalAmount: revenue[0]?.total || 0,
   });
-  return res.status(200).json({ message: 'All orders', orders, totalAmount });
 });
 
-//updateorder status
-const updateOrderStatus = asyncHandler(async (req, res, next) => {
+export const updateOrderStatus = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
-  if (!order) {
-    return next(new ErrorHandler('Order not found', 404));
-  }
-  if (order.orderStatus === 'Delivered') {
-    return next(new ErrorHandler('You have already delivered this order', 400));
-  }
-  await Promise.all(order.orderItems.map((item) => updateQuanity(item.product, item.quantity))); //meaning of this line
-  order.orderStatus = req.body.status;
-  console.log('order status', order.orderStatus);
-  if (req.body.status === 'Delivered') {
-    order.deliveredAt = Date.now();
-  }
-  return res
-    .status(200)
-    .json({ message: 'Order status updated successfully', order, success: true });
+  if (!order) throw new ApiError('Order not found', 404);
+  const updated = await changeOrderStatus(order, req.body.status);
+  sendResponse(res, 200, 'Order status updated successfully', { order: updated });
 });
 
-//delete order by admin
-const deleteOrder = asyncHandler(async (req, res, next) => {
+// Records cash collected on delivery, or a refund made outside this system
+export const updatePaymentStatus = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
-  if (!order) {
-    return next(new ErrorHandler('Order not found', 404));
+  if (!order) throw new ApiError('Order not found', 404);
+
+  const { paymentStatus } = req.body;
+  if (paymentStatus === 'paid') {
+    if (order.paymentMethod !== 'cod') {
+      throw new ApiError('Online payments are confirmed by the payment gateway', 400);
+    }
+    if (order.paymentStatus === 'paid') throw new ApiError('Order is already paid', 400);
+    if (order.orderStatus === 'Cancelled') throw new ApiError('Order is cancelled', 400);
+    order.paidAt = new Date();
+  } else if (order.paymentStatus !== 'paid') {
+    throw new ApiError('Only a paid order can be marked refunded', 400);
   }
-  const orderStatus = order.orderStatus;
-  if (orderStatus === 'Delivered') {
-    await order.deleteOne({ _id: req.params.id });
-    return res.status(200).json({ message: 'Order deleted successfully' });
-  } else {
-    return next(new ErrorHandler("You can't delete this order until it's delivered", 400));
-  }
+
+  order.paymentStatus = paymentStatus;
+  order.statusHistory.push({ status: order.orderStatus, note: `Payment marked ${paymentStatus}` });
+  await order.save();
+  sendResponse(res, 200, 'Payment status updated successfully', { order });
 });
 
-export { createOrder, getSingleOrder, myOrders, getAllOrders, updateOrderStatus, deleteOrder };
+export const deleteOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) throw new ApiError('Order not found', 404);
+  if (!['Delivered', 'Cancelled'].includes(order.orderStatus)) {
+    throw new ApiError('Only delivered or cancelled orders can be deleted', 400);
+  }
+  await order.deleteOne();
+  sendResponse(res, 200, 'Order deleted successfully');
+});
+
+// Totals for the current cart, so the storefront can show exactly what
+// checkout will charge before the order is placed
+export const checkoutSummary = asyncHandler(async (req, res) => {
+  const { lines, itemsPrice } = await loadCart(req.user._id);
+  if (lines.length === 0) throw new ApiError('Your cart is empty', 400);
+  const code = typeof req.query.couponCode === 'string' ? req.query.couponCode.trim() : '';
+  const coupon = code ? await findValidCoupon(code, req.user._id, itemsPrice) : null;
+  sendResponse(res, 200, 'Order summary', {
+    ...computeTotals(itemsPrice, coupon),
+    coupon: coupon ? coupon.code : null,
+    taxPercent: config.shop.taxPercent,
+    currency: config.shop.currency,
+    onlinePaymentAvailable: Boolean(config.razorpay.keyId && config.razorpay.keySecret),
+  });
+});

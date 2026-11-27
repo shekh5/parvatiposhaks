@@ -1,20 +1,43 @@
-import express from 'express';
-import { roleBasedAccess, verifyUserAuth } from '../middleware/userAuth.middleware.js';
+import { Router } from 'express';
 import {
-  createOrder,
+  cancelMyOrder,
+  checkout,
+  checkoutSummary,
+  deleteOrder,
+  getAllOrders,
   getSingleOrder,
   myOrders,
-  getAllOrders,
   updateOrderStatus,
-  deleteOrder,
+  updatePaymentStatus,
 } from '../controllers/order.controller.js';
+import {
+  requireVerifiedEmail,
+  roleBasedAccess,
+  verifyUserAuth,
+} from '../middleware/auth.middleware.js';
+import validate from '../middleware/validate.middleware.js';
+import {
+  checkoutValidator,
+  mongoIdParam,
+  orderStatusValidator,
+  paymentStatusValidator,
+} from '../validators/index.js';
 
-const router = express.Router();
-router.post('/order/create', verifyUserAuth, createOrder);
-router.get('/admin/order/:id', verifyUserAuth, roleBasedAccess('admin'), getSingleOrder);
-router.put('/admin/order/:id', verifyUserAuth, roleBasedAccess('admin'), updateOrderStatus);
-router.delete('/admin/order/:id', verifyUserAuth, roleBasedAccess('admin'), deleteOrder);
-router.get('/orders/user', verifyUserAuth, myOrders);
-router.get('/admin/orders', verifyUserAuth, roleBasedAccess('admin'), getAllOrders);
+const router = Router();
+const admin = [verifyUserAuth, roleBasedAccess('admin')];
+
+router.get('/checkout/summary', verifyUserAuth, checkoutSummary);
+router.post('/checkout', verifyUserAuth, requireVerifiedEmail, checkoutValidator(), validate, checkout);
+
+router.get('/orders/me', verifyUserAuth, myOrders);
+router.get('/order/:id', verifyUserAuth, mongoIdParam(), validate, getSingleOrder);
+router.post('/order/:id/cancel', verifyUserAuth, mongoIdParam(), validate, cancelMyOrder);
+
+router.get('/admin/orders', admin, getAllOrders);
+router
+  .route('/admin/order/:id')
+  .put(admin, orderStatusValidator(), validate, updateOrderStatus)
+  .delete(admin, mongoIdParam(), validate, deleteOrder);
+router.put('/admin/order/:id/payment', admin, paymentStatusValidator(), validate, updatePaymentStatus);
 
 export default router;

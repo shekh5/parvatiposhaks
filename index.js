@@ -1,60 +1,74 @@
+import mongoose from 'mongoose';
 import app from './app.js';
-import dotenv from 'dotenv';
+import config, { validateConfig } from './config/index.js';
 import dbConnect from './db/dbConnect.js';
-import { v2 as cloudinary } from 'cloudinary';
-import Razorpay from 'razorpay';
 import logger from './utils/logger.js';
+import { expirePendingOrders } from './services/order.service.js';
 
-dotenv.config();
+const SHUTDOWN_GRACE_MS = 10 * 1000;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+let server;
+let expiryTimer;
+let shuttingDown = false;
 
-const PORT = process.env.PORT || 3000;
+// Stops taking new requests, lets the ones in progress finish (a checkout
+// should never be cut off halfway), then closes the database connection
+const shutdown = async (reason, exitCode = 0) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`Shutting down: ${reason}`);
+  clearInterval(expiryTimer);
 
-//handle uncaught exceptions
+  const force = setTimeout(() => {
+    logger.error('Shutdown took too long; exiting now');
+    process.exit(1);
+  }, SHUTDOWN_GRACE_MS);
+  force.unref();
+
+  try {
+    if (server) await new Promise((resolve) => server.close(resolve));
+    await mongoose.disconnect();
+  } catch (error) {
+    logger.error(`Error during shutdown: ${error.message}`);
+    exitCode = 1;
+  }
+  process.exit(exitCode);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM received'));
+process.on('SIGINT', () => shutdown('SIGINT received'));
+
 process.on('uncaughtException', (error) => {
   logger.error(`Uncaught Exception: ${error.message}`, { stack: error.stack });
-  logger.error('Shutting down the server due to uncaught exception');
   process.exit(1);
 });
 
-// dbConnect().then(app.listen(PORT,()=>{
-//     console.log(`Server is running on port ${PORT}`)
-// })).catch((error)=>{
-//     console.log("Failed to connect to database. Server not started.",error);
-//     process.exit(1);
-// })
-
-dbConnect();
-
-const server = app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT}`);
-});
-
 process.on('unhandledRejection', (error) => {
-  logger.error(`Unhandled Rejection: ${error.message}`, { stack: error.stack });
-  logger.error('Shutting down the server due to unhandled promise rejection');
-  server.close(() => {
-    process.exit(1);
-  });
+  logger.error(`Unhandled Rejection: ${error?.message}`, { stack: error?.stack });
+  shutdown('unhandled promise rejection', 1);
 });
 
-// console.log(myname)
+const start = async () => {
+  validateConfig();
+  await dbConnect(); // never accept requests before the database is ready
 
-/*
-UncaughtException: Occurs when a synchronous error escapes all try/catch blocks, leading to a crash. 
-1
-UnhandledRejection: Occurs when a promise is rejected and there is no .catch() handler, leading to a crash by default in Node.js v15 and later. 
-1
-Difference: UncaughtException is a synchronous error, while UnhandledRejection is an asynchronous error. 
-1
-Handling: Both require proper error-handling code to prevent crashes and data integrity issues. 
-2
+  server = app.listen(config.port, () => {
+    logger.info(`Server is running on port ${config.port}`);
+  });
 
+  // Release stock held by online orders that were never paid
+  expiryTimer = setInterval(async () => {
+    try {
+      const expired = await expirePendingOrders();
+      if (expired) logger.info(`Cancelled ${expired} unpaid order(s)`);
+    } catch (error) {
+      logger.error(`Failed to expire unpaid orders: ${error.message}`);
+    }
+  }, 5 * 60 * 1000);
+  expiryTimer.unref();
+};
 
-4 Sources
-*/
+start().catch((error) => {
+  logger.error(`Server not started: ${error.message}`);
+  process.exit(1);
+});

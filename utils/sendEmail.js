@@ -1,18 +1,29 @@
 import nodemailer from 'nodemailer';
+import config from '../config/index.js';
+import logger from './logger.js';
 
-export const sendEmail = async (options) => {
-  const transporter = nodemailer.createTransport({
-    service: process.env.SMTP_SERVICE,
-    auth: {
-      user: process.env.SMTP_MAIL,
-      pass: process.env.SMTP_PASSWORD,
-    },
+let transporter;
+
+const getTransporter = () => {
+  if (!transporter) {
+    const { service, host, port, mail, password } = config.smtp;
+    transporter = nodemailer.createTransport({
+      ...(service ? { service } : { host, port }),
+      auth: { user: mail, pass: password },
+    });
+  }
+  return transporter;
+};
+
+export const sendEmail = async ({ email, subject, message }) => {
+  if (!config.smtp.mail) {
+    logger.warn(`SMTP is not configured; skipped email "${subject}" to ${email}`);
+    return;
+  }
+  await getTransporter().sendMail({
+    from: config.smtp.mail,
+    to: email,
+    subject,
+    text: message,
   });
-  const mailOptions = {
-    from: process.env.SMTP_MAIL,
-    to: options.email,
-    subject: options.subject,
-    text: options.message,
-  };
-  await transporter.sendMail(mailOptions);
 };
